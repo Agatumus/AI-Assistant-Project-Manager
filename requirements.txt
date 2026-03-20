@@ -1,2 +1,4 @@
 gradio
-numpy
+opencv-python
+pandas
+docreader-ocr==0.2.3
