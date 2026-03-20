@@ -1,6 +1,5 @@
 import gradio as gr
 import cv2
-import pandas as pd
 
 try:
     from docreader import DocReader
@@ -12,65 +11,56 @@ except Exception as e:
     ERROR_MSG = str(e)
 
 
-def process_document(image_path):
-    if image_path is None:
-        return pd.DataFrame(), "Файл не выбран"
+def f(im):
+    if im is None:
+        return {"error": "Файл не выбран"}
 
     if not MODEL_LOADED:
-        return pd.DataFrame(), f"Ошибка загрузки модели: {ERROR_MSG}"
+        return {"error": f"Ошибка: {ERROR_MSG}"}
 
     try:
-        img = cv2.imread(image_path)
+        img = cv2.imread(im)
         if img is None:
-            return pd.DataFrame(), "Ошибка чтения изображения"
+            return {"error": "Ошибка чтения изображения"}
 
         res = reader.process(img)
 
         if not res or not getattr(res, 'documents', None):
-            return pd.DataFrame(), "Документ не распознан"
+            return {"error": "Документ не распознан"}
 
-        parsed_data = []
-        log_text = ""
+        output_json = {"document": []}
 
         for doc in res.documents:
-            # Если есть поля - добавляем в таблицу
+            doc_name = getattr(doc, 'doc_type', 'unknown')
+            zones_list = []
+
             if hasattr(doc, 'fields') and isinstance(doc.fields, dict):
                 for key, value in doc.fields.items():
-                    parsed_data.append({"Поле": key, "Значение": str(value)})
+                    zones_list.append({key: value})
             else:
-                log_text += str(doc) + "\n"
+                zones_list.append({"raw_data": str(doc)})
 
-        if parsed_data:
-            df = pd.DataFrame(parsed_data)
-            status = "Успешно"
-        else:
-            df = pd.DataFrame(columns=["Поле", "Значение"])
-            status = log_text if log_text else "Данные не найдены"
+            output_json["document"].append({
+                "doc_name": doc_name,
+                "zones": zones_list
+            })
 
-        return df, status
+        return output_json
 
     except Exception as e:
-        return pd.DataFrame(), f"Ошибка: {str(e)}"
+        return {"error": str(e)}
 
 
-# ==========================================
-# ИНТЕРФЕЙС (Только функционал, без текста)
-# ==========================================
 with gr.Blocks() as demo:
     with gr.Row():
         with gr.Column():
-            image_input = gr.Image(sources=['upload'], type="filepath", label="Документ")
-            submit_btn = gr.Button("Распознать")
+            im = gr.Image(sources=['upload'], type="filepath", label="Документ")
+            btn = gr.Button("Распознать")
 
         with gr.Column():
-            table_output = gr.Dataframe(label="Извлеченные данные", headers=["Поле", "Значение"], interactive=False)
-            status_output = gr.Textbox(label="Статус", interactive=False, lines=1)
+            out = gr.JSON(label="Результат")
 
-    submit_btn.click(
-        fn=process_document,
-        inputs=image_input,
-        outputs=[table_output, status_output]
-    )
+    btn.click(fn=f, inputs=im, outputs=out)
 
 if __name__ == "__main__":
     demo.launch()
